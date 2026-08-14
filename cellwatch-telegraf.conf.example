@@ -1,0 +1,23 @@
+# CellWatch Telegraf wiring — drop into /etc/telegraf/telegraf.conf
+# (or reference it: telegraf --config telegraf/cellwatch-telegraf.conf)
+#
+# Requires: cellwatch installed and executable, password at /etc/cellwatch/pass
+#   chmod 600 /etc/cellwatch/pass   (owned by the telegraf user)
+
+[[inputs.exec]]
+  commands = [
+    "/usr/local/bin/cellwatch --telegraf --host 192.168.8.1 --user admin --password-file /etc/cellwatch/pass"
+  ]
+  timeout = "10s"
+  interval = "30s"
+  data_format = "influx"
+
+# Reuse your existing InfluxDB output (Unraid/Proxmox stack) or add one.
+# A dedicated `cellwatch` bucket keeps short retention on signal-only
+# high-value data if you want independent retention policy.
+#
+# [[outputs.influxdb_v2]]
+#   urls = ["http://localhost:8086"]
+#   token = "$INFLUX_TOKEN"
+#   organization = "homelab"
+#   bucket = "cellwatch"

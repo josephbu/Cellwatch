@@ -1,0 +1,246 @@
+#!/usr/bin/env bash
+# cellwatch - scrape a Huawei HiLink LTE modem (B818/B535) and emit
+# InfluxDB line protocol (--telegraf) or a human table (--health).
+#
+# Exit codes (contract with Telegraf's exec input):
+#   0 success   2 unreachable/timeout   3 auth failed   4 unusable data
+#
+# On any nonzero exit nothing is printed to stdout; the reason goes to stderr.
+
+set -o pipefail
+
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+. "$DIR/lib/common.sh"
+. "$DIR/lib/auth.sh"
+. "$DIR/lib/huawei_api.sh"
+. "$DIR/lib/parse.sh"
+. "$DIR/lib/lineprotocol.sh"
+
+usage() {
+  cat <<EOF
+Usage: $0 [options]
+
+Options:
+  --config <file>        Config file (default: ./cellwatch.conf beside script)
+  --host <ip>            Router IP (default 192.168.8.1)
+  --user <user>            Login username (default admin)
+  --password <pass>        Inline password (discouraged: visible in ps)
+  --password-file <file>   Read password from file (perms 600, preferred)
+  --password-hash <mode>   auto|sha256|plain (default auto)
+  --health                 Human-readable table (default)
+  --telegraf               InfluxDB line protocol for Telegraf exec
+  --measurement-prefix <p> Line-protocol prefix (default cellwatch)
+  --timeout <secs>         Per-request curl timeout (default 5)
+  --insecure               Allow insecure TLS (self-signed https)
+  --no-logout              Skip the logout call
+  --debug                  Verbose diagnostics to stderr
+  --version                Print version and exit
+  -h, --help               Show this help
+
+Exit codes: 0 ok, 2 unreachable, 3 auth failed, 4 unusable data.
+EOF
+}
+
+# load_config - source a config file as defaults; CLI flags override it.
+# Config search: --config <file> if given, else ./cellwatch.conf beside the
+# script. The file uses friendly names (HOST, USER, ...) mapped onto CW_*.
+load_config() {
+  local cfg="" prev=""
+  for a in "$@"; do
+    case "$prev" in
+      --config) cfg=$a ;;
+    esac
+    case "$a" in
+      --config=*) cfg=${a#*=} ;;
+    esac
+    prev=$a
+  done
+  if [ -z "$cfg" ] && [ -r "$DIR/cellwatch.conf" ]; then
+    cfg="$DIR/cellwatch.conf"
+  fi
+  [ -n "$cfg" ] || return 0
+  [ -r "$cfg" ] || die "$CW_EXIT_AUTH" "cannot read config file: $cfg"
+  . "$cfg"
+  [ "${HOST+x}" = "x" ]            && CW_HOST=$HOST
+  [ "${USER+x}" = "x" ]            && CW_USER=$USER
+  [ "${PASSWORD+x}" = "x" ]        && CW_PASS=$PASSWORD
+  [ "${PASSWORD_FILE+x}" = "x" ]   && CW_PASS_FILE=$PASSWORD_FILE
+  [ "${PASSWORD_HASH+x}" = "x" ]   && CW_HASH_MODE=$PASSWORD_HASH
+  [ "${MEASUREMENT_PREFIX+x}" = "x" ] && CW_PREFIX=$MEASUREMENT_PREFIX
+  [ "${TIMEOUT+x}" = "x" ]         && CW_TIMEOUT=$TIMEOUT
+  [ "${INSECURE+x}" = "x" ]        && CW_INSECURE=$INSECURE
+  [ "${NO_LOGOUT+x}" = "x" ]       && CW_DO_LOGOUT=$((1-NO_LOGOUT))
+  [ "${DEBUG+x}" = "x" ]           && CW_DEBUG=$DEBUG
+  debug "loaded config: $cfg"
+}
+
+# --flag value / --flag=value parsing
+proc_args() {
+  # defaults only for vars the config file did not already set
+  : "${CW_HOST:=192.168.8.1}"
+  : "${CW_USER:=admin}"
+  : "${CW_PASS:=}"
+  : "${CW_PASS_FILE:=}"
+  : "${CW_HASH_MODE:=auto}"
+  : "${CW_MODE:=health}"
+  : "${CW_PREFIX:=cellwatch}"
+  : "${CW_INSECURE:=0}"
+  : "${CW_DO_LOGOUT:=1}"
+  : "${CW_PASS_SOURCE:=}"
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --config)        shift 2 ;;
+      --config=*)      shift ;;
+      --host)        CW_HOST=$2; shift 2 ;;
+      --host=*)      CW_HOST=${1#*=}; shift ;;
+      --user)        CW_USER=$2; shift 2 ;;
+      --user=*)      CW_USER=${1#*=}; shift ;;
+      --password)    CW_PASS=$2; CW_PASS_SOURCE=inline; shift 2 ;;
+      --password=*)  CW_PASS=${1#*=}; CW_PASS_SOURCE=inline; shift ;;
+      --password-file) CW_PASS_FILE=$2; CW_PASS_SOURCE=file; shift 2 ;;
+      --password-file=*) CW_PASS_FILE=${1#*=}; CW_PASS_SOURCE=file; shift ;;
+      --password-hash) CW_HASH_MODE=$2; shift 2 ;;
+      --password-hash=*) CW_HASH_MODE=${1#*=}; shift ;;
+      --health)      CW_MODE=health; shift ;;
+      --telegraf)    CW_MODE=telegraf; shift ;;
+      --measurement-prefix) CW_PREFIX=$2; shift 2 ;;
+      --measurement-prefix=*) CW_PREFIX=${1#*=}; shift ;;
+      --timeout)     CW_TIMEOUT=$2; shift 2 ;;
+      --timeout=*)   CW_TIMEOUT=${1#*=}; shift ;;
+      --insecure)    CW_INSECURE=1; shift ;;
+      --no-logout)   CW_DO_LOGOUT=0; shift ;;
+      --debug)       CW_DEBUG=1; shift ;;
+      --version)     printf 'cellwatch %s\n' "$CELLWATCH_VERSION"; exit 0 ;;
+      -h|--help)     usage; exit 0 ;;
+      *)             die "$CW_EXIT_SHAPE" "unknown option: $1 (see --help)" ;;
+    esac
+  done
+  [ "$CW_INSECURE" = "1" ] && CW_CURL_EXTRA=(-k)
+}
+
+resolve_password() {
+  if [ "$CW_PASS_SOURCE" = "inline" ]; then
+    warn "using --password: visible to other local users via ps; prefer --password-file or a config file"
+  elif [ -n "$CW_PASS_FILE" ]; then
+    [ -r "$CW_PASS_FILE" ] || die "$CW_EXIT_AUTH" "cannot read password file: $CW_PASS_FILE"
+    CW_PASS=$(cat "$CW_PASS_FILE")
+  fi
+  [ -n "$CW_PASS" ] || die "$CW_EXIT_AUTH" "no password given (--password, --password-file, or config)"
+  case "$CW_HASH_MODE" in
+    auto|sha256|plain) ;;
+    *) die "$CW_EXIT_AUTH" "invalid --password-hash: $CW_HASH_MODE" ;;
+  esac
+}
+
+login_attempt() {
+  case "$CW_HASH_MODE" in
+    sha256) cw_login "$CW_USER" "$CW_PASS" sha256 ;;
+    plain)  cw_login "$CW_USER" "$CW_PASS" plain ;;
+    auto)
+      if cw_login "$CW_USER" "$CW_PASS" sha256; then
+        return 0
+      fi
+      case "$CW_LOGIN_CODE" in
+        108001|108002|108006)
+          warn "sha256 login failed (code $CW_LOGIN_CODE); retrying with plaintext"
+          cw_login "$CW_USER" "$CW_PASS" plain ;;
+        *) return 1 ;;
+      esac
+      ;;
+  esac
+}
+
+auth_fail_msg() {
+  case "$CW_LOGIN_CODE" in
+    108001|108002|108006) printf 'invalid username or password (code %s)' "$CW_LOGIN_CODE" ;;
+    108007) printf 'account locked, wait %ss (code %s)' "${CW_LOGIN_WAIT:-?}" "$CW_LOGIN_CODE" ;;
+    125001) printf 'invalid session (code %s)' "$CW_LOGIN_CODE" ;;
+    125002) printf 'CSRF token mismatch (code %s)' "$CW_LOGIN_CODE" ;;
+    *) printf 'login failed (code %s)' "${CW_LOGIN_CODE:-unknown}" ;;
+  esac
+}
+
+poll_and_emit() {
+  local xml
+
+  # device information first: DeviceName feeds the device_name tag
+  if xml=$(cw_api_get "/api/device/information"); then
+    cw_parse_device <<<"$xml"
+  else
+    warn "device/information failed"
+  fi
+
+  CW_TAGS=",host=$(cw_esc_tag "$CW_HOST")"
+  [ -n "$CW_FIELD_DEVICE_NAME" ] && CW_TAGS="$CW_TAGS,device_name=$(cw_esc_tag "$CW_FIELD_DEVICE_NAME")"
+  CW_TS=$(cw_timestamp_ns)
+
+  if xml=$(cw_api_get "/api/device/signal"); then
+    cw_parse_signal <<<"$xml"
+    cw_lp_signal
+  else
+    warn "device/signal failed"
+  fi
+
+  if xml=$(cw_api_get "/api/monitoring/status"); then
+    cw_parse_status <<<"$xml"
+  else
+    warn "monitoring/status failed"
+  fi
+
+  if xml=$(cw_api_get "/api/net/current-plmn"); then
+    cw_parse_plmn <<<"$xml"
+  else
+    warn "net/current-plmn failed"
+  fi
+
+  if xml=$(cw_api_get "/api/monitoring/traffic-statistics"); then
+    cw_parse_traffic <<<"$xml"
+    cw_lp_traffic
+  else
+    warn "monitoring/traffic-statistics failed"
+  fi
+
+  cw_lp_connection
+
+  if [ "$CW_EMITTED" = "1" ]; then
+    if [ "$CW_MODE" = "telegraf" ]; then
+      printf '%b' "$CW_OUT"
+    else
+      cw_health
+    fi
+  fi
+
+  [ "$CW_EMITTED" = "1" ] || return 1
+}
+
+main() {
+  load_config "$@"
+  proc_args "$@"
+  cw_check_deps
+  resolve_password
+
+  cw_setup_tmpdir
+  trap 'cw_cleanup' EXIT
+  trap 'cw_cleanup' TERM INT
+
+  debug "host=$CW_HOST user=$CW_USER mode=$CW_MODE hash=$CW_HASH_MODE timeout=$CW_TIMEOUT"
+
+  if ! login_attempt; then
+    if [ "$CW_LOGIN_CODE" = "CONNECT" ]; then
+      die "$CW_EXIT_CONNECT" "cannot reach $CW_HOST (webserver/SesTokInfo failed)"
+    fi
+    die "$CW_EXIT_AUTH" "$(auth_fail_msg)"
+  fi
+  debug "login OK (session cookie stored in $CW_COOKIE_JAR)"
+
+  if ! poll_and_emit; then
+    die "$CW_EXIT_SHAPE" "no usable data collected from router (endpoints returned no parseable fields)"
+  fi
+
+  if [ "$CW_DO_LOGOUT" = "1" ]; then
+    cw_logout
+  fi
+  exit 0
+}
+
+main "$@"

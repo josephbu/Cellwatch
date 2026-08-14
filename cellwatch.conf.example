@@ -1,0 +1,36 @@
+# cellwatch.conf.example — copy to cellwatch.conf in the same directory and edit.
+#   cp cellwatch.conf.example cellwatch.conf && chmod 600 cellwatch.conf
+#
+# The real cellwatch.conf is gitignored. If you put PASSWORD here it is not
+# visible in `ps` like --password, but a readable-by-anyone config file is just
+# as bad, so keep it 600 and owned by the user that runs Telegraf.
+#
+# Every value is optional — omit what you want from the CLI/defaults instead.
+
+# Router IP / hostname
+HOST="192.168.8.1"
+
+# Login username
+USER="admin"
+
+# Password. Prefer PASSWORD_FILE (a file perms-600'd to the telegraf user).
+#PASSWORD="your-password"
+PASSWORD_FILE="/etc/cellwatch/pass"
+
+# auth scheme: auto|sha256|plain
+PASSWORD_HASH="auto"
+
+# Line-protocol measurement prefix
+MEASUREMENT_PREFIX="cellwatch"
+
+# Per-request curl timeout, seconds
+TIMEOUT="5"
+
+# Add -k to curl (self-signed HTTPS)
+#INSECURE="1"
+
+# Skip the logout call at the end of a run
+#NO_LOGOUT="1"
+
+# Verbose diagnostics to stderr
+#DEBUG="1"
