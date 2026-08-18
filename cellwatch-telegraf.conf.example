@@ -1,5 +1,5 @@
 # CellWatch Telegraf wiring — drop into /etc/telegraf/telegraf.conf
-# (or reference it: telegraf --config telegraf/cellwatch-telegraf.conf)
+# (or reference it: telegraf --config cellwatch-telegraf.conf.example)
 #
 # Requires: cellwatch installed and executable, password at /etc/cellwatch/pass
 #   chmod 600 /etc/cellwatch/pass   (owned by the telegraf user)

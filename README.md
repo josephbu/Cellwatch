@@ -44,10 +44,7 @@ cp cellwatch.conf.example cellwatch.conf
 chmod 600 cellwatch.conf
 ```
 
-The real `cellwatch.conf` is gitignored; only `cellwatch.conf.example` is
-committed. This is the runtime config for `cellwatch` — distinct from
-`telegraf/cellwatch-telegraf.conf`, which is the sample Telegraf
-`[[inputs.exec]]` stanza. Example contents:
+Example contents:
 
 ```sh
 HOST="192.168.8.1"
@@ -129,8 +126,8 @@ succeeds, so a bad poll can never inject garbage into the Telegraf stream.
 
 ## Telegraf wiring
 
-See [`telegraf/cellwatch-telegraf.conf`](telegraf/cellwatch-telegraf.conf). A 30s
-`[[inputs.exec]]` block emits all four measurements. The mostly-static
+See [`cellwatch-telegraf.conf.example`](cellwatch-telegraf.conf.example) at the
+repo root. A 30s `[[inputs.exec]]` block emits all four measurements. The mostly-static
 `cellwatch_device` measurement rides along for simplicity; it is cheap (one
 extra API call).
 
@@ -139,8 +136,8 @@ extra API call).
 Each `--telegraf` run prints **one InfluxDB line-protocol line per measurement**
 on stdout; all lines share the poll's nanosecond timestamp. Telegraf's `exec`
 input with `data_format = "influx"` parses every newline-separated line as a
-separate point and writes them all in the same poll — so the three/four lines
-of one run become three/four series (each an InfluxDB point per field set),
+separate point and writes them all in the same poll — so the four lines
+of one run become four series (each an InfluxDB point per field set),
 not a single merged row.
 
 Every point is tagged with `host` (router IP) and `device_name`.
@@ -215,15 +212,17 @@ WiFi disabled.
 
 ### Publishing this repo publicly
 
-Before pushing anywhere public, note what is **not** committed:
+Before pushing anywhere public, make sure this stays true:
 
-- `cellwatch.conf` (secrets) — gitignored.
+- `cellwatch.conf` (secrets) is gitignored — verify it is **not** staged.
 - `dev/` (design docs + screenshots of the real router's web UI, which show
-  serial/IMEI) — gitignored.
-- `test/fixtures/*.xml` **are** committed, but sanitized (fictional serial,
-  IMEI, MACs, DNS). If you ever re-capture fixtures from a live device, scrub
-  `SerialNumber`, `Imei`, `Imsi`, `Iccid`, `MacAddress*`, `wan_dns_address`
-  before committing.
+  serial/IMEI) is gitignored.
+- Commit `.gitignore` **first**, or `dev/` and `cellwatch.conf` would leak on
+  the first push.
+- `test/` (parser tests + `test/fixtures/*.xml`) is safe to commit — the
+  fixtures are sanitized (fictional serial, IMEI, MACs, DNS). If you ever
+  re-capture fixtures from a live device, scrub `SerialNumber`, `Imei`,
+  `Imsi`, `Iccid`, `MacAddress*`, `wan_dns_address` before committing.
 
 Double-check with `git status` that no real credentials or identifiers are
 staged before you commit.
@@ -253,3 +252,7 @@ Login returns a `#`-delimited list of ~32 single-use CSRF tokens; each request
 consumes one. A fresh login is performed per run, so the queue never runs dry
 mid-poll, and `--password-hash auto` falls back to legacy plaintext (`type 3`)
 if the modern scheme is rejected.
+
+## License
+
+[AGPL-3.0](LICENSE).
