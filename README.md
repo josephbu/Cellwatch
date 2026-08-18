@@ -96,19 +96,19 @@ Sample `--health`:
 ```
 CellWatch 0.1.0 — B818-263 (192.168.8.1)
   Signal:      RSRP -97 dBm | RSRQ -12.0 dB | SINR -5 dB | RSSI -63 dBm
-  Cell:        band 1 | PCI 390 | cell id 25188931 | PLMN 50502 | BW ul/dl 20/20 MHz
+  Cell:        band 1 | PCI 390 | cell id 23456789 | PLMN 55555 | BW ul/dl 20/20 MHz
   Connection:  LTE via YES OPTUS | connected=1 | roaming=0 | session 11320s
   Traffic:     session up/down 719331/829343 B | total up/down 10726295/50743841 B | up/down 0/29 Bps
-  Device:      VNNDW00000000000 | sw 10.0.5.2(H190SP1C74) | hw WL3B818M | webui WEBUI 10.0.5.2(W2SP2C74) | uptime 11338s
+  Device:      VNNDW12345678900 | sw 10.0.5.2(H190SP1C74) | hw WL3B818M | webui WEBUI 10.0.5.2(W2SP2C74) | uptime 11338s
 ```
 
 Sample `--telegraf`:
 
 ```
-cellwatch_signal,host=192.168.8.1,device_name=B818-263 rsrp=-97,rsrq=-12.0,sinr=-5,rssi=-63,band=1i,pci=390i,cell_id=25188931i,plmn="50502",upload_bandwidth_mhz=20,download_bandwidth_mhz=20 1786693523333400000
+cellwatch_signal,host=192.168.8.1,device_name=B818-263 rsrp=-97,rsrq=-12.0,sinr=-5,rssi=-63,band=1i,pci=390i,cell_id=23456789i,plmn="55555",upload_bandwidth_mhz=20,download_bandwidth_mhz=20 1786693523333400000
 cellwatch_connection,host=192.168.8.1,device_name=B818-263 network_type="LTE",operator="YES OPTUS",connection_status="901",connected=1i,roaming=0i,session_duration_s=11328i,upload_bps=58i,download_bps=58i 1786693523333400000
 cellwatch_traffic,host=192.168.8.1,device_name=B818-263 session_upload_bytes=719871i,session_download_bytes=829807i,total_upload_bytes=10726835i,total_download_bytes=50744305i,total_connect_time_s=16832i 1786693523333400000
-cellwatch_device,host=192.168.8.1,device_name=B818-263 serial="VNNDW00000000000",hardware_version="WL3B818M",software_version="10.0.5.2(H190SP1C74)",uptime=11338i 1786693523333400000
+cellwatch_device,host=192.168.8.1,device_name=B818-263 serial="VNNDW12345678900",hardware_version="WL3B818M",software_version="10.0.5.2(H190SP1C74)",uptime=11338i 1786693523333400000
 ```
 
 ## Exit codes (Telegraf contract)
@@ -209,35 +209,6 @@ WiFi disabled.
 - Every run opens a session, polls, then logs out (unless `--no-logout`) and
   removes its temp cookie jar, so repeated polls don't pile up sessions on the
   router (Huawei firmware caps concurrent sessions).
-
-### Publishing this repo publicly
-
-Before pushing anywhere public, make sure this stays true:
-
-- `cellwatch.conf` (secrets) is gitignored — verify it is **not** staged.
-- `dev/` (design docs + screenshots of the real router's web UI, which show
-  serial/IMEI) is gitignored.
-- Commit `.gitignore` **first**, or `dev/` and `cellwatch.conf` would leak on
-  the first push.
-- `test/` (parser tests + `test/fixtures/*.xml`) is safe to commit — the
-  fixtures are sanitized (fictional serial, IMEI, MACs, DNS). If you ever
-  re-capture fixtures from a live device, scrub `SerialNumber`, `Imei`,
-  `Imsi`, `Iccid`, `MacAddress*`, `wan_dns_address` before committing.
-
-Double-check with `git status` that no real credentials or identifiers are
-staged before you commit.
-
-## Testing
-
-Offline parser tests run without touching the router:
-
-```sh
-bash test/run_tests.sh
-```
-
-Fixtures in `test/fixtures/` are saved raw responses from the real device
-(`device_signal`, `monitoring_status`, `traffic_statistics`,
-`device_information`, `current_plmn`, `state_login`).
 
 ## How the auth works (for the curious)
 
