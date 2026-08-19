@@ -131,6 +131,15 @@ repo root. A 30s `[[inputs.exec]]` block emits all four measurements. The mostly
 `cellwatch_device` measurement rides along for simplicity; it is cheap (one
 extra API call).
 
+## Example Grafana dashboard
+
+An example dashboard built with **Grafana + InfluxDB**, fed by the `--telegraf`
+output (via the `exec` input), is shown below. It graphs signal quality
+(`rsrp`, `rsrq`, `sinr`, `rssi`), link state, traffic rates
+(`non_negative_derivative` of the byte counters), and device uptime.
+
+[![CellWatch example Grafana dashboard](dashboard-example.png)](dashboard-example.png)
+
 ## Data model
 
 Each `--telegraf` run prints **one InfluxDB line-protocol line per measurement**
