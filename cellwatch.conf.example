@@ -1,9 +1,9 @@
 # cellwatch.conf.example — copy to cellwatch.conf in the same directory and edit.
 #   cp cellwatch.conf.example cellwatch.conf && chmod 600 cellwatch.conf
 #
-# The real cellwatch.conf is gitignored. If you put PASSWORD here it is not
-# visible in `ps` like --password, but a readable-by-anyone config file is just
-# as bad, so keep it 600 and owned by the user that runs Telegraf.
+# If you put PASSWORD here it is not visible in `ps` like --password, but a
+# readable-by-anyone config file is just as bad, so keep it 600 and owned by
+# the user that runs Telegraf.
 #
 # Every value is optional — omit what you want from the CLI/defaults instead.
 
