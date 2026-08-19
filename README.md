@@ -9,6 +9,15 @@ Runs identically on macOS (ships bash 3.2) and Linux (bash 4/5). The auth flow
 and field names were verified live against a B818-263 on firmware
 `10.0.5.2(H190SP1C74)` (Optus).
 
+## Example Grafana dashboard
+
+An example dashboard built with **Grafana + InfluxDB**, fed by the `--telegraf`
+output (via the `exec` input), is shown below. It graphs signal quality
+(`rsrp`, `rsrq`, `sinr`, `rssi`), link state, traffic rates
+(`non_negative_derivative` of the byte counters), and device uptime.
+
+[![CellWatch example Grafana dashboard](dashboard-example.png)](dashboard-example.png)
+
 ## Requirements
 
 - `bash` 3.2+ (portable subset; no bash-4-only features used)
@@ -130,15 +139,6 @@ See [`cellwatch-telegraf.conf.example`](cellwatch-telegraf.conf.example) at the
 repo root. A 30s `[[inputs.exec]]` block emits all four measurements. The mostly-static
 `cellwatch_device` measurement rides along for simplicity; it is cheap (one
 extra API call).
-
-## Example Grafana dashboard
-
-An example dashboard built with **Grafana + InfluxDB**, fed by the `--telegraf`
-output (via the `exec` input), is shown below. It graphs signal quality
-(`rsrp`, `rsrq`, `sinr`, `rssi`), link state, traffic rates
-(`non_negative_derivative` of the byte counters), and device uptime.
-
-[![CellWatch example Grafana dashboard](dashboard-example.png)](dashboard-example.png)
 
 ## Data model
 
